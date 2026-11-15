@@ -86,7 +86,7 @@ trait HasImageInput extends HasImageUrl
       } else {
         val req = prepareMethod()
         req.setURI(new URI(rowToUrl(row)))
-        addHeaders(req, getValueOpt(row, subscriptionKey), getValueOpt(row, AADToken))
+        addHeaders(req, row, addContentType = false)
         req match {
           case er: HttpEntityEnclosingRequestBase =>
             rowToEntity(row).foreach(er.setEntity)
@@ -195,7 +195,7 @@ class OCR(override val uid: String) extends CognitiveServicesBase(uid)
 
   def this() = this(Identifiable.randomUID("OCR"))
 
-  def urlPath: String = "/vision/v2.0/ocr"
+  def urlPath: String = "/vision/v3.2/ocr"
 
   override def responseDataType: DataType = OCRResponse.schema
 }
@@ -217,12 +217,14 @@ object RecognizeText extends ComplexParamsReadable[RecognizeText] {
 
 trait BasicAsyncReply extends HasAsyncReply {
 
-  override protected def queryForResult(key: Option[String],
+  override protected def queryForResult(headers: Map[String, String],
                                         client: CloseableHttpClient,
                                         location: URI): Option[HTTPResponseData] = {
     val get = new HttpGet()
     get.setURI(location)
-    key.foreach(get.setHeader("Ocp-Apim-Subscription-Key", _))
+    headers.foreach { case (name, value) =>
+      get.setHeader(name, value)
+    }
     get.setHeader("User-Agent", s"synapseml/${BuildInfo.version}${HeaderValues.PlatformInfo}")
     val resp = convertAndClose(sendWithRetries(client, get, getBackoffs))
     get.releaseConnection()
@@ -265,12 +267,12 @@ trait BasicAsyncReply extends HasAsyncReply {
       val originalLocation = new URI(response.headers.filter(_.name.toLowerCase() == "operation-location").head.value)
       val location = modifyPollingURI(originalLocation)
       val maxTries = getMaxPollingRetries
-      val key = request.headers.find(_.name == "Ocp-Apim-Subscription-Key").map(_.value)
+      val headers = extractHeaderValuesForPolling(request)
       blocking {
         Thread.sleep(getInitialPollingDelay.toLong)
       }
       val it = (0 to maxTries).toIterator.flatMap { i =>
-        queryForResult(key, client, location).orElse({
+        queryForResult(headers, client, location).orElse({
           blocking {
             Thread.sleep(getPollingDelay.toLong)
           }
@@ -356,7 +358,11 @@ trait HasAsyncReply extends Params {
     suppressMaxRetriesException -> false)
   //scalastyle:on magic.number
 
-  protected def queryForResult(key: Option[String],
+  protected def extractHeaderValuesForPolling(request: HTTPRequestData): Map[String, String] = {
+    request.headers.map(h => h.name -> h.value).toMap
+  }
+
+  protected def queryForResult(headers: Map[String, String],
                                client: CloseableHttpClient,
                                location: URI): Option[HTTPResponseData]
 
@@ -365,6 +371,10 @@ trait HasAsyncReply extends Params {
 }
 
 
+/**
+  * Legacy v2.0 text recognition. The hosted endpoint has retired.
+  * Migrate to ReadImage and its analyzeResult.readResults response rather than changing this operation's URL.
+  */
 class RecognizeText(override val uid: String)
   extends CognitiveServicesBaseNoHandler(uid)
     with BasicAsyncReply
@@ -436,7 +446,7 @@ class ReadImage(override val uid: String)
 
   def setLanguageCol(v: String): this.type = setVectorParam(language, v)
 
-  def urlPath: String = "/vision/v3.1/read/analyze"
+  def urlPath: String = "/vision/v3.2/read/analyze"
 
   override protected def responseDataType: DataType = ReadResponse.schema
 }
@@ -457,7 +467,7 @@ class GenerateThumbnails(override val uid: String)
     new CustomOutputParser().setUDF({ r: HTTPResponseData => r.entity.map(_.content).orNull })
   }
 
-  def urlPath: String = "/vision/v2.0/generateThumbnail"
+  def urlPath: String = "/vision/v3.2/generateThumbnail"
 }
 
 object AnalyzeImage extends ComplexParamsReadable[AnalyzeImage]
@@ -537,7 +547,7 @@ class AnalyzeImage(override val uid: String)
 
   override def responseDataType: DataType = AIResponse.schema
 
-  def urlPath: String = "/vision/v2.0/analyze"
+  def urlPath: String = "/vision/v3.2/analyze"
 }
 
 object RecognizeDomainSpecificContent
@@ -578,7 +588,7 @@ class RecognizeDomainSpecificContent(override val uid: String)
 
   override def responseDataType: DataType = DSIRResponse.schema
 
-  def urlPath: String = "/vision/v2.0"
+  def urlPath: String = "/vision/v3.2"
 
   override protected def prepareUrl: Row => String = { r => getUrl + s"/models/${getValue(r, model)}/analyze" }
 
@@ -594,7 +604,7 @@ class TagImage(override val uid: String)
 
   def this() = this(Identifiable.randomUID("TagImage"))
 
-  def urlPath: String = "/vision/v2.0/tag"
+  def urlPath: String = "/vision/v3.2/tag"
 
   override def responseDataType: DataType = TagImagesResponse.schema
 
@@ -624,7 +634,7 @@ class DescribeImage(override val uid: String)
 
   override def responseDataType: DataType = DescribeImageResponse.schema
 
-  def urlPath: String = "/vision/v2.0/describe"
+  def urlPath: String = "/vision/v3.2/describe"
 
   val maxCandidates = new ServiceParam[Int](this, "maxCandidates", "Maximum candidate descriptions to return",
     isURLParam = true

@@ -41,7 +41,10 @@ case class RequiredErrorFields(errorType: String,
   def toMap: Map[String, String] = {
     Map(
       "errorType" -> errorType,
-      "errorMessage" -> errorType
+      // Exception.getMessage is null for exceptions constructed without one
+      // (e.g. new NullPointerException). spray-json's JsString rejects null,
+      // so serializing the payload would throw and mask the original error.
+      "errorMessage" -> Option(errorMessage).getOrElse("")
     )
   }
 }
@@ -64,7 +67,12 @@ object SynapseMLLogging extends Logging {
 
   private[ml] def getHadoopConfEntries: Map[String, String] = {
     SparkSession.getActiveSession.map { spark =>
-      val hc = spark.sparkContext.hadoopConfiguration
+      // Session-derived rather than spark.sparkContext, which Databricks Unity Catalog standard
+      // access mode rejects by name. Matches Spark's own MLlib ReadWrite (SPARK-48909) and picks
+      // up session-level conf overrides that sparkContext.hadoopConfiguration misses.
+      // Intentionally uncached: these are session identity fields that a notebook can rebind
+      // mid-session, and the ~0.2ms cost is per fit/transform/construct call, never per row.
+      val hc = spark.sessionState.newHadoopConf()
       //noinspection ScalaStyle
       HadoopKeysToLog.flatMap { case (field, name) =>
         Option(hc.get(field)).map { v: String => (name, v) }
@@ -88,6 +96,7 @@ object SynapseMLLogging extends Logging {
     logInfo(SASScrubber.scrub(message))
   }
 
+  override def logDebug(msg: => String): Unit = super.logDebug(SASScrubber.scrub(msg))
 }
 
 trait SynapseMLLogging extends Logging {
@@ -128,8 +137,7 @@ trait SynapseMLLogging extends Logging {
       Future {
         logToCertifiedEvents(
           info("libraryName"),
-          featureName.get,
-          info -- Seq("libraryName", "method")
+          featureName.get
         )
       }.failed.map {
         case e: Exception => logErrorBase("certifiedEventLogging", e)

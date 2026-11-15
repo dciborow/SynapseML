@@ -6,6 +6,7 @@ import uuid
 from synapse.ml.core.platform.Platform import (
     running_on_synapse_internal,
     running_on_synapse,
+    running_on_fabric_python,
 )
 from pyspark.sql.dataframe import DataFrame
 from pyspark import SparkContext
@@ -82,7 +83,7 @@ class SynapseMLLogger:
 
     @classmethod
     def _get_environment_logger(cls, log_level: int) -> logging.Logger:
-        if running_on_synapse_internal():
+        if running_on_synapse_internal() or running_on_fabric_python():
             from synapse.ml.pymds.synapse_logger import get_mds_logger
 
             return get_mds_logger(
@@ -145,14 +146,10 @@ class SynapseMLLogger:
         if feature_name is not None and running_on_synapse_internal():
             from synapse.ml.fabric.telemetry_utils import report_usage_telemetry
 
-            keys_to_remove = ["libraryName", "method"]
-            attributes = {
-                key: value for key, value in info.items() if key not in keys_to_remove
-            }
             report_usage_telemetry(
                 feature_name=self.library_name,
                 activity_name=feature_name,
-                attributes=attributes,
+                attributes={},
             )
         self.logger.info(json.dumps(info))
 

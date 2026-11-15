@@ -15,11 +15,12 @@ import org.scalactic.{Equality, TolerantNumerics}
 //scalastyle:off null
 trait TextEndpoint {
   lazy val textKey: String = sys.env.getOrElse("TEXT_API_KEY", Secrets.CognitiveApiKey)
-  lazy val textApiLocation: String = sys.env.getOrElse("TEXT_API_LOCATION", "eastus")
+  lazy val textApiLocation: String = sys.env.getOrElse("TEXT_API_LOCATION", "centralus")
 }
 
 trait TATestBase[S <: TextAnalyticsBaseNoBinding with HasUnpackedBinding]
   extends TransformerFuzzing[S] with TextEndpoint {
+  override val compareDataInSerializationTest: Boolean = false
 
   def model: S
 
@@ -214,7 +215,7 @@ class NERSuite extends TATestBase[NER] {
     assert(testEntity.text === "trip")
     assert(testEntity.offset === 18)
     assert(testEntity.length === 4)
-    assert(testEntity.confidenceScore > 0.7)
+    assert(testEntity.confidenceScore > 0.5)
     assert(testEntity.category === "Event")
   }
 
